@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>STM32F4_UART</name>
+	<name>STM32F4_I2C</name>
 	<comment></comment>
 	<projects>
 	</projects>

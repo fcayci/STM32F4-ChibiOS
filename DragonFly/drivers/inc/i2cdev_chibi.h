@@ -53,8 +53,8 @@ THE SOFTWARE.
 
 /* currently only one I2C bus is possible */
 #define I2C_MPU 			I2CD1
-#define MPU_INT_PORT		GPIOB
-#define MPU_INT_PIN			4
+#define MPU_INT_PORT		GPIOA
+#define MPU_INT_PIN			2
 
 
 #define I2CDEV_DEFAULT_READ_TIMEOUT     1000

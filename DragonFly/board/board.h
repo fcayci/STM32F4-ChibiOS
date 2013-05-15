@@ -95,7 +95,7 @@
 #define GPIOC_PIN2                  2
 #define GPIOC_PIN3               	3
 #define GPIOC_LED_GREEN             4
-#define GPIOC_LED_BLUE                  5
+#define GPIOC_LED_BLUE              5
 #define GPIOC_PIN6                  6
 #define GPIOC_PIN7                  7
 #define GPIOC_PIN8                  8

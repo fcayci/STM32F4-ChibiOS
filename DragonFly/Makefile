@@ -66,11 +66,11 @@ PROJECT = ch
 # Imported source files and paths
 CHIBIOS = ../../ChibiOS
 include board/board.mk
+include drivers/drivers.mk
 include $(CHIBIOS)/os/hal/platforms/STM32F4xx/platform.mk
 include $(CHIBIOS)/os/hal/hal.mk
 include $(CHIBIOS)/os/ports/GCC/ARMCMx/STM32F4xx/port.mk
 include $(CHIBIOS)/os/kernel/kernel.mk
-include $(CHIBIOS)/test/test.mk
 
 # Define linker script file here
 LDSCRIPT= $(PORTLD)/STM32F405xG.ld
@@ -80,10 +80,10 @@ LDSCRIPT= $(PORTLD)/STM32F405xG.ld
 # setting.
 CSRC = $(PORTSRC) \
        $(KERNSRC) \
-       $(TESTSRC) \
        $(HALSRC) \
        $(PLATFORMSRC) \
        $(BOARDSRC) \
+       $(DRIVERSRC) \
        $(CHIBIOS)/os/various/chprintf.c \
        main.c
 
@@ -116,8 +116,7 @@ ASMSRC = $(PORTASM)
 
 INCDIR = $(PORTINC) $(KERNINC) $(TESTINC) \
          $(HALINC) $(PLATFORMINC) $(BOARDINC) \
-         $(CHIBIOS)/os/various/devices_lib/accel \
-         $(CHIBIOS)/os/various
+         $(DRIVERINC) $(CHIBIOS)/os/various
 
 #
 # Project, sources and paths

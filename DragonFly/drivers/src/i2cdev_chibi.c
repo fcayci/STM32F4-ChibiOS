@@ -171,14 +171,14 @@ int8_t I2CdevreadBytes(uint8_t devAddr, uint8_t regAddr, uint8_t length, uint8_t
 	//uint8_t mpu_txbuf[1], mpu_rxbuf[I2CDEV_BUFFER_LENGTH], i;
 	msg_t rdymsg;
 	if(length > I2CDEV_BUFFER_LENGTH) {
-		chprintf((BaseChannel *)&SD2,"ERROR readBytes: length > I2CDEV BUFFERLENGTH\n");
+		chprintf((BaseChannel *)&SD1,"ERROR readBytes: length > I2CDEV BUFFERLENGTH\n");
 		return FALSE;
 	}
 	i2cAcquireBus(&I2C_MPU);
 	rdymsg = i2cMasterTransmitTimeout(&I2C_MPU, devAddr, &regAddr, 1, data, length, MS2ST(timeout));
 	i2cReleaseBus(&I2C_MPU);
 	if(rdymsg == RDY_TIMEOUT || rdymsg == RDY_RESET) {
-		chprintf((BaseChannel *)&SD2,"I2C ERROR: %d\n", i2cGetErrors(&I2CD1));
+		chprintf((BaseChannel *)&SD1,"I2C ERROR: %d\n\r", i2cGetErrors(&I2CD1));
 		return FALSE;
 	}
 	return TRUE;
@@ -331,7 +331,7 @@ bool_t I2CdevwriteBytes(uint8_t devAddr, uint8_t regAddr, uint8_t length, uint8_
 	uint8_t mpu_txbuf[I2CDEV_BUFFER_LENGTH], mpu_rxbuf[1];
 	msg_t rdymsg;
 	if((length + 1)> I2CDEV_BUFFER_LENGTH) {
-		chprintf((BaseChannel *)&SD2,"ERROR readBytes: length + 1 > I2CDEV BUFFERLENGTH\n");
+		chprintf((BaseChannel *)&SD1,"ERROR readBytes: length + 1 > I2CDEV BUFFERLENGTH\n");
 		return FALSE;
 	}
 	mpu_txbuf[0] = regAddr;

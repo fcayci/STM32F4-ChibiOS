@@ -240,7 +240,7 @@ void mpu_i2c_read_data(uint8_t addr, uint8_t length){
 	for(i=0;i<length;i++)mpu_rxbuf[i] = 0x00;
 	i2cMasterTransmit(&I2C_MPU, MPU_ADDR, mpu_txbuf, 1, mpu_rxbuf, length);
 #ifdef MPU_DEBUG
-	val[0] = complement2signed(mpu_rxbuf[1],mpu_rxbuf[1]);
+	val[0] = (mpu_rxbuf[0] << 8) + mpu_rxbuf[1];
 	val[1] = (mpu_rxbuf[2] << 8) + mpu_rxbuf[3];
 	val[2] = (mpu_rxbuf[4] << 8) + mpu_rxbuf[5];
 	val[3] = (mpu_rxbuf[6] << 8) + mpu_rxbuf[7];

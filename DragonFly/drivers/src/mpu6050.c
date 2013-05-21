@@ -2718,7 +2718,6 @@ void MPUsetFIFOByte(uint8_t data) {
  */
 uint8_t MPUgetDeviceID() {
     I2CdevreadBits(MPUdevAddr, MPU6050_RA_WHO_AM_I, MPU6050_WHO_AM_I_BIT, MPU6050_WHO_AM_I_LENGTH, MPUbuffer, I2CDEV_DEFAULT_READ_TIMEOUT);
-    chprintf((BaseChannel *)&SD1,"READ VALUE:%x\n\r",MPUbuffer[0]);
     return MPUbuffer[0];
 }
 /** Set Device ID.

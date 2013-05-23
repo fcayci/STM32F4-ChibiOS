@@ -71,6 +71,9 @@ double gyroXrate, gyroYrate;
 double accXangle, accYangle; // Angle calculate using the accelerometer
 double gyroXangle, gyroYangle; // Angle calculate using the gyro
 
+static int32_t errorX, integralX, derivativeX, outputX;
+static int32_t errorY, integralY, derivativeY, outputY;
+double Ki, Kd, Kp;
 static bool_t isi2c;
 
 static void initMotors(void);
@@ -81,6 +84,7 @@ static void applyCompFilter(void);
 static void getData(void);
 static void testStable(void);
 static void testStable2(void);
+static void getPID(void);
 
 static void print(char *p);
 static void println(char *p);
@@ -152,15 +156,8 @@ static msg_t thPrinter(void *arg){
 	(void)arg;
 	chRegSetThreadName("printer");
 	while (TRUE){
-		print("CXA:");
-		printn((uint32_t)compAngleX);
-		print("\tCYA:");
-		printn((uint32_t)compAngleY);
-		print("\tAXA:");
-		printn((uint32_t)accXangle);
-		print("\tAYA:");
-		printn((uint32_t)accYangle);
-		print("\r\n");
+		//chprintf((BaseSequentialStream *)&SD1, "PIDY: %d\tAYA: %f\tCYA: %f\r\n",outputY,accYangle,compAngleY);
+		chprintf((BaseSequentialStream *)&SD1, "PIDY: %d\tPIDX: %d\r\n",outputY,outputX);
 		chThdSleepMilliseconds(200);
 	}
 	return 0;
@@ -177,13 +174,26 @@ int main(void) {
 	chThdSleepMilliseconds(3000);
 
 	isi2c = initSensors();
+
+	errorX = 0;
+  	integralX = 0;
+	errorY = 0;
+  	integralY = 0;
+
 	/* Create the heartbeat thread */
 	chThdCreateStatic(wahbeat, sizeof(wahbeat), NORMALPRIO, thBlinker, NULL);
 
+	Ki=0.05;
+	Kp=0.01;
+	Kd=0;
+	getData();
+	getPID();
+	chThdSleepMilliseconds(1000);
 	while (TRUE){
 		if(isi2c) {
 			getData();
-			testStable2();
+			getPID();
+			//testStable();
 		}
 		chThdSleepMilliseconds(2);
 	}
@@ -272,6 +282,20 @@ static bool_t initSensors(void){
 }
 
 
+static void getPID(void){
+	errorX = 180 - compAngleX;
+  	integralX = integralX + errorX*0.002;
+  	derivativeX = (errorX - errorX)/0.002;
+    outputX = Kp*errorX + Ki*integralX + Kd*derivativeX;
+
+	errorY = 180 - compAngleY;
+  	integralY = integralY + errorY*0.002;
+  	derivativeY = (errorY - errorY)/0.002;
+    outputY = Kp*errorY + Ki*integralY + Kd*derivativeY;
+
+}
+
+
 static void print(char *p) {
 	while (*p) chSequentialStreamPut(&SD1, *p++);
 }
@@ -328,23 +352,10 @@ static void getData(void){
 
 static void testStable(void){
 
-		if (Roll > 0 ) {
-			pwmEnableChannel(&PWMD3, MOTOR_EAST, 300-Roll);
-			pwmEnableChannel(&PWMD3, MOTOR_WEST, 300+Roll);
-		}
-		else{
-			pwmEnableChannel(&PWMD3, MOTOR_WEST, 300-Roll);
-			pwmEnableChannel(&PWMD3, MOTOR_EAST, 300+Roll);
-
-		}
-		if (Pitch > 0){
-			pwmEnableChannel(&PWMD2, MOTOR_NORTH, 300-Pitch);
-			pwmEnableChannel(&PWMD2, MOTOR_SOUTH, 300+Pitch);
-		}
-		else {
-			pwmEnableChannel(&PWMD2, MOTOR_SOUTH, 300-Pitch);
-			pwmEnableChannel(&PWMD2, MOTOR_NORTH, 300+Pitch);
-		}
+	pwmEnableChannel(&PWMD3, MOTOR_EAST, 300+outputY);
+	pwmEnableChannel(&PWMD3, MOTOR_WEST, 300-outputY);
+	pwmEnableChannel(&PWMD2, MOTOR_NORTH, 300+outputX);
+	pwmEnableChannel(&PWMD2, MOTOR_SOUTH, 300-outputX);
 
 }
 

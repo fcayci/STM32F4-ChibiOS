@@ -1,7 +1,8 @@
 /*
  * DragonFly Quadcopter ChibiOS-based firmware
  *
- * 		Furkan Cayci
+ *		File	: main.c
+ *		Author	: Furkan Cayci
  *
  */
 
@@ -14,6 +15,19 @@
  * 4 x PWM Motors				: TIM3CH1(PC6), TIM3CH2(PC7), TIM2CH3(PB10), TIM2CH4(PB11)
  * 2 x LEDs						: Green LED (PC4), Blue LED (PC5)
  * Battery Check				: AIN5 (PA5)
+ *
+ * View from above:
+ *
+ * 				Forward
+ *
+ * 		   	   M1,N,CW,+X
+ * 		   		   *
+ * 		   		   |
+ * M4,E,CCW,+Y *---+---* M2,W,CCW,-Y
+ * 		   		   |
+ * 		   		   *
+ * 		   	   M3,S,CW,-X
+ *
  */
 
 #include "ch.h"
@@ -23,72 +37,55 @@
 #include "chprintf.h"
 #include "math.h"
 
-#define TAU_C 			0.075       // Time-constant
-#define LOOPTIME 		2         	// Expressed in milli-seconds
-#define DT 				0.02		// Expressed in seconds
-#define X_ACC_OFFSET 	0
-#define Y_ACC_OFFSET 	-1
-#define Z_ACC_OFFSET 	16000
-#define X_GYRO_OFFSET 	-30
-#define Y_GYRO_OFFSET 	-20
-#define Z_GYRO_OFFSET 	0
-#define X_ACC_SENS_2G 	0.001 		// [g/digit]
-#define Y_ACC_SENS_2G 	0.001 		// [g/digit]
-#define Z_ACC_SENS_2G 	0.001 		// [g/digit]
-#define X_GYRO_SENS 	0.00875 	// [dps/digit]
-#define Y_GYRO_SENS 	0.00875 	// [dps/digit]
-#define Z_GYRO_SENS 	0.00875 	// [dps/digit]
-
-const double Q_angle = 0.001;
-const double Q_gyroBias = 0.003;
-const double R_angle = 0.03;
-
-#define RAD_TO_DEG 57.2957786
-
+/*
+ * PWM definitions for the motors. 500 might be increased to 512 to make it 2^9
+ */
 #define PWM_CLOCK_FREQUENCY 50000000
 #define PWM_PERIOD_IN_TICKS 500
 #define PWM_FREQUENCY (PWM_CLOCK_FREQUENCY/PWM_PERIOD_IN_TICKS)
 
-#define MOTOR_NORTH			2
-#define MOTOR_SOUTH			3
 #define MOTOR_EAST			0
 #define MOTOR_WEST			1
+#define MOTOR_NORTH			2
+#define MOTOR_SOUTH			3
 
-int16_t accelXraw, accelYraw, accelZraw;
-int16_t gyroXraw, gyroYraw, gyroZraw;
+#define RAD_TO_DEG 57.2957786
 
-float Roll, Pitch, Yaw;
-uint32_t Roll_i, Pitch_i, Yaw_i;
-float tau_c, a_compl;
+#define DT 				0.002		// Expressed in seconds (for the PID)
+#define COMP			0.93		// Variable for complementary filter
 
-float x_acc, y_acc, z_acc;
-float x_gyro, y_gyro, z_gyro;
+#define KP	1		// KP
+#define	KI	(1 * DT)	// KI * DT = 1 * 0.002
+#define KD	0		// KD / DT = 0 / 0.002
 
-int16_t accX, accY, accZ;
+int16_t XaccelRaw, YaccelRaw, ZaccelRaw;
+int16_t XgyroRaw, YgyroRaw, ZgyroRaw;
 
-double compAngleX, compAngleY;
-double gyroXrate, gyroYrate;
-double accXangle, accYangle; // Angle calculate using the accelerometer
-double gyroXangle, gyroYangle; // Angle calculate using the gyro
+double XaccelAngle, YaccelAngle;
+double XgyroRate, YgyroRate;
+double XcompAngle, YcompAngle;
 
-static int32_t errorX, integralX, derivativeX, outputX;
-static int32_t errorY, integralY, derivativeY, outputY;
-double Ki, Kd, Kp;
+static double errorX, integralX, derivativeX, outputX;
+static double errorY, integralY, derivativeY, outputY;
+
+static uint16_t mEastSpeed, mWestSpeed, mNorthSpeed, mSouthSpeed;
+
 static bool_t isi2c;
 
 static void initMotors(void);
 static void testMotors(void);
-static void initXBee(void);
-static bool_t initSensors(void);
-static void applyCompFilter(void);
-static void getData(void);
-static void testStable(void);
-static void testStable2(void);
-static void getPID(void);
+static void setMotorSpeed(uint8_t motor_t, uint16_t speed_t);
 
-static void print(char *p);
-static void println(char *p);
-static void printn(uint32_t n);
+static void initXBee(void);
+
+static bool_t initSensors(void);
+static void getSensorData(void);
+static void applyCompFilter(void);
+
+static void stableFlight(void);
+static void updatePID(void);
+static void updateP(void);
+static void updatePI(void);
 
 /* Configure Motors */
 static PWMConfig mtrPCFG = {
@@ -98,8 +95,8 @@ static PWMConfig mtrPCFG = {
 	{
 			{PWM_OUTPUT_DISABLED, NULL},
 			{PWM_OUTPUT_DISABLED, NULL},
-			{PWM_OUTPUT_ACTIVE_HIGH, NULL},
-			{PWM_OUTPUT_ACTIVE_HIGH, NULL}
+			{PWM_OUTPUT_ACTIVE_HIGH, NULL},	// MOTOR_NORTH
+			{PWM_OUTPUT_ACTIVE_HIGH, NULL}	// MOTOR_SOUTH
 	},
 	0
 };
@@ -109,8 +106,8 @@ static PWMConfig mtrNCFG = {
 	PWM_PERIOD_IN_TICKS,
 	NULL,
 	{
-			{PWM_OUTPUT_ACTIVE_HIGH, NULL},
-			{PWM_OUTPUT_ACTIVE_HIGH, NULL},
+			{PWM_OUTPUT_ACTIVE_HIGH, NULL},	// MOTOR_EAST
+			{PWM_OUTPUT_ACTIVE_HIGH, NULL}, // MOTOR_WEST
 			{PWM_OUTPUT_DISABLED, NULL},
 			{PWM_OUTPUT_DISABLED, NULL}
 	},
@@ -156,8 +153,8 @@ static msg_t thPrinter(void *arg){
 	(void)arg;
 	chRegSetThreadName("printer");
 	while (TRUE){
-		//chprintf((BaseSequentialStream *)&SD1, "PIDY: %d\tAYA: %f\tCYA: %f\r\n",outputY,accYangle,compAngleY);
-		chprintf((BaseSequentialStream *)&SD1, "PIDY: %d\tPIDX: %d\r\n",outputY,outputX);
+		//chprintf((BaseSequentialStream *)&SD1, "AX: %f\tAY: %f\t,AZ: %f\t,GX: %f\t,GY: %f\t,GZ: %f\t\r\n",outputY,accYangle,compAngleY);
+		chprintf((BaseSequentialStream *)&SD1, "EX: %f\t EY: %f\t OY: %f\t OY: %f\r\n",XcompAngle,errorY,outputX,outputY);
 		chThdSleepMilliseconds(200);
 	}
 	return 0;
@@ -168,6 +165,9 @@ int main(void) {
 	halInit();
 	chSysInit();
 
+	/* Create the heartbeat thread */
+	chThdCreateStatic(wahbeat, sizeof(wahbeat), NORMALPRIO, thBlinker, NULL);
+
 	initMotors();
 	initXBee();
 
@@ -175,25 +175,27 @@ int main(void) {
 
 	isi2c = initSensors();
 
-	errorX = 0;
-  	integralX = 0;
-	errorY = 0;
-  	integralY = 0;
 
-	/* Create the heartbeat thread */
-	chThdCreateStatic(wahbeat, sizeof(wahbeat), NORMALPRIO, thBlinker, NULL);
+	//mNorthSpeed = 300;
+	mNorthSpeed = 0;
+	mSouthSpeed = mNorthSpeed;
 
-	Ki=0.05;
-	Kp=0.01;
-	Kd=0;
-	getData();
-	getPID();
+	//mEastSpeed = 300;
+	mEastSpeed = 0;
+	mWestSpeed = mEastSpeed;
+
+	errorX = errorY = 0;
+  	integralX = integralY = 0;
+
+	getSensorData();
+	updatePI();
 	chThdSleepMilliseconds(1000);
+
 	while (TRUE){
 		if(isi2c) {
-			getData();
-			getPID();
-			//testStable();
+			getSensorData();
+			updatePI();
+			stableFlight();
 		}
 		chThdSleepMilliseconds(2);
 	}
@@ -210,29 +212,19 @@ static void initMotors(void){
 	pwmStart(&PWMD3, &mtrNCFG);
 }
 
-static void testMotors(void){
-
-	chprintf((BaseSequentialStream *)&SD1, "Testing Motors...");
-	pwmEnableChannel(&PWMD2, 2, PWM_PERIOD_IN_TICKS/10); 	/* M1 */
-	chThdSleepMilliseconds(5000);
-	pwmDisableChannel(&PWMD2, 2); 		/* M1 */
-	pwmEnableChannel(&PWMD3, 0, PWM_PERIOD_IN_TICKS/10); 	/* M2 */
-	chThdSleepMilliseconds(5000);
-	pwmDisableChannel(&PWMD3, 0); 		/* M2 */
-	pwmEnableChannel(&PWMD2, 3, PWM_PERIOD_IN_TICKS/10); 	/* M3 */
-	chThdSleepMilliseconds(5000);
-	pwmDisableChannel(&PWMD2, 3); 		/* M3 */
-	pwmEnableChannel(&PWMD3, 1, PWM_PERIOD_IN_TICKS/10); 	/* M4 */
-	chThdSleepMilliseconds(5000);
-	pwmDisableChannel(&PWMD3, 1); 		/* M4 */
-}
-
+/* TODO:
+ *  * Test the actual range
+ *  * Figure out packet dropping
+ */
 static void initXBee(void){
 	palSetPadMode(GPIOA, 9, PAL_MODE_ALTERNATE(7));
 	palSetPadMode(GPIOA, 10, PAL_MODE_ALTERNATE(7));
 	sdStart(&SD1, &sd1cfg);
 }
 
+/* TODO:
+ *  * Add error checks to all functions
+ */
 static bool_t initSensors(void){
 	bool_t sts = 0;
 
@@ -268,63 +260,32 @@ static bool_t initSensors(void){
 	chThdSleepMilliseconds(100);
 
 	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Calibrating...\r\n");
-	MPUgetMotion6(&accelXraw, &accelYraw, &accelZraw, &gyroXraw, &gyroYraw, &gyroZraw);
-	accXangle = (atan2(accelYraw,accelZraw)+M_PI)*RAD_TO_DEG;
-	accYangle = (atan2(accelXraw,accelZraw)+M_PI)*RAD_TO_DEG;
-	gyroXrate = accXangle;
-	gyroYrate = accYangle;
-	compAngleX = compAngleX;
-	compAngleY = compAngleY;
+	MPUgetMotion6(&XaccelRaw, &YaccelRaw, &ZaccelRaw, &XgyroRaw, &YgyroRaw, &ZgyroRaw);
 
+	XaccelAngle = (atan2(YaccelRaw,ZaccelRaw)+M_PI)*RAD_TO_DEG;
+	YaccelAngle = (atan2(XaccelRaw,ZaccelRaw)+M_PI)*RAD_TO_DEG;
+
+	XgyroRate = XaccelAngle;
+	YgyroRate = YaccelAngle;
+	XcompAngle = XaccelAngle;
+	YcompAngle = YaccelAngle;
+
+	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Calibrating Complete...\r\n");
+	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Creating Printer...\r\n");
 	chThdCreateStatic(waprint, sizeof(waprint), NORMALPRIO, thPrinter, NULL);
 
 	return TRUE;
 }
 
+/* TODO:
+ * 	* Get the actual conversation speed
+ * 	* Move the processing & filter to another function
+ */
+static void getSensorData(void){
 
-static void getPID(void){
-	errorX = 180 - compAngleX;
-  	integralX = integralX + errorX*0.002;
-  	derivativeX = (errorX - errorX)/0.002;
-    outputX = Kp*errorX + Ki*integralX + Kd*derivativeX;
-
-	errorY = 180 - compAngleY;
-  	integralY = integralY + errorY*0.002;
-  	derivativeY = (errorY - errorY)/0.002;
-    outputY = Kp*errorY + Ki*integralY + Kd*derivativeY;
-
-}
-
-
-static void print(char *p) {
-	while (*p) chSequentialStreamPut(&SD1, *p++);
-}
-
-static void println(char *p) {
-	while (*p) chSequentialStreamPut(&SD1, *p++);
-	chSequentialStreamWrite(&SD1, (uint8_t *)"\r\n", 2);
-}
-
-static void printn(uint32_t n) {
-	char buf[16], *p;
-
-	if (!n) chSequentialStreamPut(&SD1, '0');
-	else {
-		p = buf;
-		while (n) *p++ = (n % 10) + '0', n /= 10;
-		while (p > buf) chSequentialStreamPut(&SD1, *--p);
-	}
-}
-
-
-static void getData(void){
-
-	MPUgetMotion6(&accelXraw, &accelYraw, &accelZraw, &gyroXraw, &gyroYraw, &gyroZraw);
+	MPUgetMotion6(&XaccelRaw, &YaccelRaw, &ZaccelRaw, &XgyroRaw, &YgyroRaw, &ZgyroRaw);
 	/* Raw outputs */
-	//chprintf((BaseSequentialStream *)&SD1, "AXR: %d\t AYR:%d AZR: %d\t GXR:%d GYR: %d\t GZR:%d \r\n", accelXraw, accelYraw, accelZraw, gyroXraw, gyroYraw, gyroZraw);
-
-	//applyCompFilter();
-	/* After complementary filter */
+	//chprintf((BaseSequentialStream *)&SD1, "AXR: %d\t AYR:%d AZR: %d\t GXR:%d GYR: %d\t GZR:%d \r\n", XaccelRaw, YaccelRaw, ZaccelRaw, XgyroRaw, YgyroRaw, ZgyroRaw);
 
 	/*
 	 *  Get the atan of X and Y. This value will be between -¹ to ¹ in radians.
@@ -332,57 +293,114 @@ static void getData(void){
 	 *  Here is the output for an (almost) flat reading:
 	 *  accXangle = 178.12345, accYangle = 179.12345
 	 */
+	XaccelAngle = (atan2(YaccelRaw,ZaccelRaw)+M_PI)*RAD_TO_DEG;
+	YaccelAngle = (atan2(XaccelRaw,ZaccelRaw)+M_PI)*RAD_TO_DEG;
 
-	accXangle = (atan2(accelYraw,accelZraw)+M_PI)*RAD_TO_DEG;
-	accYangle = (atan2(accelXraw,accelZraw)+M_PI)*RAD_TO_DEG;
-
-	gyroXrate = (double)gyroXraw/131.0;
-	gyroYrate = -((double)gyroYraw/131.0);
-
-	compAngleX = (0.8*(compAngleX+(gyroXrate*0.02)))+(0.2*accXangle);
-	compAngleY = (0.8*(compAngleY+(gyroYrate*0.02)))+(0.2*accYangle);
-
-	//chprintf((BaseSequentialStream *)&SD1, "AX: %f \t AY: %f \t AZ: %f \t GX: %f \t GY: %f \t GZ: %f AngX: %f AngY: %f GX_rate: %d, GY_rate: %d\r\n", x_acc,y_acc,z_acc,x_gyro,y_gyro,z_gyro,accXangle,accYangle,gyroXrate,gyroYrate);
-	//chprintf((BaseSequentialStream *)&SD1, "AaX: %f, AaY: %f, CaX: %f, CaY: %f\r\n", accXangle, accYangle, compAngleX, compAngleY);
-	//chprintf((BaseSequentialStream *)&SD1, "%f,%f\r\n", compAngleX,accYangle);
-	//chprintf((BaseSequentialStream *)&SD1, "%d,%d\r\n", (int16_t)compAngleX,(int16_t)compAngleY);
-	//chprintf((BaseSequentialStream *)&SD1, "R: %f \t P: %f \t Y: %f\r\n", Roll,Pitch,Yaw);
-
+	applyCompFilter();
 }
-
-static void testStable(void){
-
-	pwmEnableChannel(&PWMD3, MOTOR_EAST, 300+outputY);
-	pwmEnableChannel(&PWMD3, MOTOR_WEST, 300-outputY);
-	pwmEnableChannel(&PWMD2, MOTOR_NORTH, 300+outputX);
-	pwmEnableChannel(&PWMD2, MOTOR_SOUTH, 300-outputX);
-
-}
-
-static void testStable2(void){
-
-	pwmEnableChannel(&PWMD3, MOTOR_WEST, 120+(int16_t)compAngleY);
-	pwmEnableChannel(&PWMD3, MOTOR_EAST, 480-(int16_t)compAngleY);
-	pwmEnableChannel(&PWMD2, MOTOR_NORTH, 0);//120+compAngleY);
-	pwmEnableChannel(&PWMD2, MOTOR_SOUTH, 0);//480-compAngleY);}
-}
-
 
 static void applyCompFilter(void){
 
-  tau_c = (float) TAU_C;
-  a_compl = 0.0;
-  a_compl = (float) (TAU_C/(TAU_C+DT)); //0.882352941
+	XgyroRate = (double)XgyroRaw/131.0;
+	YgyroRate = -((double)YgyroRaw/131.0);
 
-  x_acc = ((float)(accelXraw - X_ACC_OFFSET)*X_ACC_SENS_2G*9.8);
-  y_acc = ((float)(accelYraw - Y_ACC_OFFSET)*Y_ACC_SENS_2G*9.8);
-  z_acc = ((float)(accelZraw - Z_ACC_OFFSET)*Z_ACC_SENS_2G*9.8);
-  x_gyro = ((float)(gyroXraw - X_GYRO_OFFSET)*X_GYRO_SENS);
-  y_gyro = ((float)(gyroYraw - Y_GYRO_OFFSET)*Y_GYRO_SENS);
-  z_gyro = ((float)(gyroZraw - Z_GYRO_OFFSET)*Z_GYRO_SENS);
-
-  Roll = (a_compl)*(Roll + x_gyro*DT) + (1-a_compl)*(x_acc);
-  Pitch = (a_compl)*(Pitch + y_gyro*DT) + (1-a_compl)*(y_acc);
-  Yaw = (a_compl)*(Yaw + z_gyro*DT) + (1-a_compl)*(z_acc);
-
+	XcompAngle = (COMP*(XcompAngle+(XgyroRate*DT)))+((1-COMP)*XaccelAngle);
+	YcompAngle = (COMP*(YcompAngle+(YgyroRate*DT)))+((1-COMP)*YaccelAngle);
 }
+
+/* TODO:
+ * 	* Change the (PWM_PER...) variable to something like
+ * MAX_MOTOR_SPEED.
+ */
+static void setMotorSpeed(uint8_t motor_t, uint16_t speed_t){
+
+	if (speed_t > PWM_PERIOD_IN_TICKS) speed_t = PWM_PERIOD_IN_TICKS;
+
+	switch (motor_t) {
+	case MOTOR_EAST:
+		pwmEnableChannel(&PWMD3, 0, speed_t);
+		break;
+	case MOTOR_WEST:
+		pwmEnableChannel(&PWMD3, 1, speed_t);
+		break;
+	case MOTOR_NORTH:
+		pwmEnableChannel(&PWMD2, 2, speed_t);
+		break;
+	case MOTOR_SOUTH:
+		pwmEnableChannel(&PWMD2, 3, speed_t);
+		break;
+	}
+}
+
+/*
+ * Calculate the error in both X and Y coordinates in reference to 180
+ * degrees. Get the I value based on 2mS sampling (for now) and find
+ * the correction value that will get sent to pwm
+ */
+static void updatePID(void){
+	errorX = 180 - XcompAngle;
+  	integralX = integralX + errorX*DT;
+  	derivativeX = (errorX - errorX)/DT;
+    outputX = KP*errorX + KI*integralX + KD*derivativeX;
+
+	errorY = 180 - YcompAngle;
+  	integralY = integralY + errorY*DT;
+  	derivativeY = (errorY - errorY)/DT;
+    outputY = KP*errorY + KI*integralY + KD*derivativeY;
+}
+static void updateP(void){
+	errorX = 180 - XcompAngle;
+    outputX = (int16_t)(KP*errorX);
+
+	errorY = 180 - YcompAngle;
+    outputY = (int16_t)(KP*errorY);
+
+    if (outputX > 180) outputX = 180;
+    else if (outputX < -180) outputX = -180;
+    if (outputY > 180) outputY = 180;
+    else if (outputY < -180) outputY = -180;
+}
+static void updatePI(void){
+	errorX = 180 - XcompAngle;
+	integralX = integralX + errorX;
+    outputX = (int16_t)(KP*errorX + KI*integralX);
+
+	errorY = 180 - YcompAngle;
+	integralY = integralY + errorY;
+    outputY = (int16_t)(KP*errorY + KI*integralY);
+
+    if (outputX > 180) outputX = 180;
+    else if (outputX < -180) outputX = -180;
+    if (outputY > 180) outputY = 180;
+    else if (outputY < -180) outputY = -180;
+}
+
+static void testMotors(void){
+
+	chprintf((BaseSequentialStream *)&SD1, "Testing Motors...");
+	setMotorSpeed(MOTOR_EAST, PWM_PERIOD_IN_TICKS/10);
+	chThdSleepMilliseconds(5000);
+	setMotorSpeed(MOTOR_EAST, 0);
+	setMotorSpeed(MOTOR_WEST, PWM_PERIOD_IN_TICKS/10);
+	chThdSleepMilliseconds(5000);
+	setMotorSpeed(MOTOR_WEST, 0);
+	setMotorSpeed(MOTOR_NORTH, PWM_PERIOD_IN_TICKS/10);
+	chThdSleepMilliseconds(5000);
+	setMotorSpeed(MOTOR_NORTH, 0);
+	setMotorSpeed(MOTOR_SOUTH, PWM_PERIOD_IN_TICKS/10);
+	chThdSleepMilliseconds(5000);
+	setMotorSpeed(MOTOR_SOUTH, 0);
+}
+
+static void stableFlight(void){
+
+	//mWestSpeed = mWestSpeed - (int16_t)(outputY);
+	//mNorthSpeed = mNorthSpeed + outputX;
+
+	setMotorSpeed(MOTOR_EAST, mEastSpeed);
+	setMotorSpeed(MOTOR_WEST, mWestSpeed);
+	setMotorSpeed(MOTOR_NORTH, mNorthSpeed);
+	setMotorSpeed(MOTOR_SOUTH, mSouthSpeed);
+}
+
+

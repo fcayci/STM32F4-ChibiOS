@@ -1,3 +1,7 @@
+/* I2C Example. 
+* Don't know if this is working. 
+*/
+
 #include <stdlib.h>
 #include <string.h>
 //#include "chprintf.h"

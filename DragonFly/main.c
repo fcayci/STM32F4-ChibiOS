@@ -34,10 +34,12 @@
 #include "hal.h"
 
 #include "mpu6050.h"
+#include "MPU6050_6Axis_MotionApps20.h"
+
 #include "chprintf.h"
 #include "math.h"
 
-#define IMU_DEBUG FALSE /* Enable debugging on IMU */
+#define IMU_DEBUG /* Enable debugging on IMU */
 
 #define USART_CR1_9BIT_WORD	(1 << 12)   /* CR1 9 bit word */
 #define USART_CR1_PARITY_SET	(1 << 10)	/* CR1 Parity bit enable */
@@ -58,7 +60,7 @@
 #define RAD_TO_DEG 57.2957786
 
 #define DT 				0.002		// Expressed in seconds (for the PID)
-#define COMP			0.93		// Variable for complementary filter
+#define COMP			0.99		// Variable for complementary filter
 
 #define KP	1		// KP
 #define	KI	(1 * DT)	// KI * DT = 1 * 0.002
@@ -170,9 +172,12 @@ static msg_t thPrinter(void *arg){
 	(void)arg;
 	chRegSetThreadName("printer");
 	while (TRUE){
-		//chprintf((BaseSequentialStream *)&SD1, "AX: %d\tAY: %d\t,AZ: %d\t,GX: %d\t,GY: %d\t,GZ: %d\t\r\n", accelRaw.x, accelRaw.y, accelRaw.z, gyroRaw.x, gyroRaw.y, gyroRaw.z);
-		chprintf((BaseSequentialStream *)&SD1, "EX: %f\t EY: %f\t OY: %f\t OY: %f\r\n",XcompAngle,errorY,outputX,outputY);
-		chThdSleepMilliseconds(20);
+
+		//chprintf((BaseSequentialStream *)&SD1, "%f:%f\n", XcompAngle,XcompAngle);
+		chprintf((BaseSequentialStream *)&SD1, "%f:%f\n", XaccelAngle,XcompAngle);
+//		chprintf((BaseSequentialStream *)&SD1, "AX: %6d AY: %6d AZ: %6d ,GX: %6d GY: %6d GZ: %6d\t\r\n", accelRaw.x, accelRaw.y, accelRaw.z, gyroRaw.x, gyroRaw.y, gyroRaw.z);
+//		chprintf((BaseSequentialStream *)&SD1, "EX: %f\t EY: %f\t OY: %f\t OY: %f\r\n",XcompAngle,errorY,outputX,outputY);
+		chThdSleepMilliseconds(50);
 	}
 	return 0;
 }
@@ -282,9 +287,10 @@ static bool_t imuInit(void){
 	YcompAngle = YaccelAngle;
 
 	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Calibrating Complete...\r\n");
-	//chprintf((BaseSequentialStream *)&SD1, "SENSOR: Creating Printer thread...\r\n");
-	chThdCreateStatic(waprint, sizeof(waprint), NORMALPRIO, thPrinter, NULL);
-
+	#if defined(IMU_DEBUG)
+		chprintf((BaseSequentialStream *)&SD1, "SENSOR: Creating Printer thread...\r\n");
+		chThdCreateStatic(waprint, sizeof(waprint), NORMALPRIO, thPrinter, NULL);
+	#endif
 	return TRUE;
 }
 
@@ -295,10 +301,6 @@ static bool_t imuInit(void){
 static void imuGetData(void){
 
 	MPUgetMotion6(&accelRaw.x, &accelRaw.y, &accelRaw.z, &gyroRaw.x, &gyroRaw.y, &gyroRaw.z);
-
-	// #if defined(IMU_DEBUG)
-	// chprintf((BaseSequentialStream *)&SD1, "AXR: %d\t AYR:%d AZR: %d\t GXR:%d GYR: %d\t GZR:%d \r\n", accelRaw.x, accelRaw.y, accelRaw.z, gyroRaw.x, gyroRaw.y, gyroRaw.z);
-	// #endif
 
 	/*
 	 *  Get the atan of X and Y. This value will be between -¹ to ¹ in radians.

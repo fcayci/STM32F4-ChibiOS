@@ -10,7 +10,7 @@
  * Features:
  *
  * External Oscillator (HSE)	: 16MHz
- * MPU6050 Gyro + Accel + (magn): I2C1 (PB6,PB7)
+ * MPU6050 Gyro + Accel			: I2C1 (PB6,PB7)
  * XBee Wireless Tranciever		: USART1 (PA9,PA10)
  * 4 x PWM Motors				: TIM3CH1(PC6), TIM3CH2(PC7), TIM2CH3(PB10), TIM2CH4(PB11)
  * 2 x LEDs						: Green LED (PC4), Blue LED (PC5)
@@ -37,6 +37,12 @@
 #include "chprintf.h"
 #include "math.h"
 
+#define IMU_DEBUG FALSE /* Enable debugging on IMU */
+
+#define USART_CR1_9BIT_WORD	(1 << 12)   /* CR1 9 bit word */
+#define USART_CR1_PARITY_SET	(1 << 10)	/* CR1 Parity bit enable */
+#define USART_CR1_EVEN_PARITY	(0 << 9)   /* CR1 even parity */
+
 /*
  * PWM definitions for the motors. 500 might be increased to 512 to make it 2^9
  */
@@ -58,6 +64,13 @@
 #define	KI	(1 * DT)	// KI * DT = 1 * 0.002
 #define KD	0		// KD / DT = 0 / 0.002
 
+/* IMU */
+
+typedef struct {int16_t x; int16_t y; int16_t z;} axis;
+
+axis accelRaw;
+axis gyroRaw;
+
 int16_t XaccelRaw, YaccelRaw, ZaccelRaw;
 int16_t XgyroRaw, YgyroRaw, ZgyroRaw;
 
@@ -72,16 +85,20 @@ static uint16_t mEastSpeed, mWestSpeed, mNorthSpeed, mSouthSpeed;
 
 static bool_t isi2c;
 
+/* XBee functions */
+static void initXBee(void);
+
+/* PWM/MOTOR functions*/
 static void initMotors(void);
 static void testMotors(void);
 static void setMotorSpeed(uint8_t motor_t, uint16_t speed_t);
 
-static void initXBee(void);
+/* IMU functions */
+static bool_t imuInit(void);
+static void imuGetData(void);
+static void imuApplyCompFilter(void);
 
-static bool_t initSensors(void);
-static void getSensorData(void);
-static void applyCompFilter(void);
-
+/* PID functions */
 static void stableFlight(void);
 static void updatePID(void);
 static void updateP(void);
@@ -117,7 +134,7 @@ static PWMConfig mtrNCFG = {
 /* Configure serial link for XBee */
 static SerialConfig sd1cfg = {
    115200,
-   0,
+   USART_CR1_9BIT_WORD | USART_CR1_PARITY_SET | USART_CR1_EVEN_PARITY,
    USART_CR2_STOP1_BITS | USART_CR2_LINEN,
    0
 };
@@ -153,9 +170,9 @@ static msg_t thPrinter(void *arg){
 	(void)arg;
 	chRegSetThreadName("printer");
 	while (TRUE){
-		//chprintf((BaseSequentialStream *)&SD1, "AX: %f\tAY: %f\t,AZ: %f\t,GX: %f\t,GY: %f\t,GZ: %f\t\r\n",outputY,accYangle,compAngleY);
+		//chprintf((BaseSequentialStream *)&SD1, "AX: %d\tAY: %d\t,AZ: %d\t,GX: %d\t,GY: %d\t,GZ: %d\t\r\n", accelRaw.x, accelRaw.y, accelRaw.z, gyroRaw.x, gyroRaw.y, gyroRaw.z);
 		chprintf((BaseSequentialStream *)&SD1, "EX: %f\t EY: %f\t OY: %f\t OY: %f\r\n",XcompAngle,errorY,outputX,outputY);
-		chThdSleepMilliseconds(200);
+		chThdSleepMilliseconds(20);
 	}
 	return 0;
 }
@@ -168,13 +185,12 @@ int main(void) {
 	/* Create the heartbeat thread */
 	chThdCreateStatic(wahbeat, sizeof(wahbeat), NORMALPRIO, thBlinker, NULL);
 
-	initMotors();
+	//initMotors();
 	initXBee();
 
 	chThdSleepMilliseconds(3000);
 
-	isi2c = initSensors();
-
+	isi2c = imuInit();
 
 	//mNorthSpeed = 300;
 	mNorthSpeed = 0;
@@ -187,15 +203,15 @@ int main(void) {
 	errorX = errorY = 0;
   	integralX = integralY = 0;
 
-	getSensorData();
+  	imuGetData();
 	updatePI();
 	chThdSleepMilliseconds(1000);
 
 	while (TRUE){
 		if(isi2c) {
-			getSensorData();
+		  	imuGetData();
 			updatePI();
-			stableFlight();
+			//stableFlight();
 		}
 		chThdSleepMilliseconds(2);
 	}
@@ -225,13 +241,8 @@ static void initXBee(void){
 /* TODO:
  *  * Add error checks to all functions
  */
-static bool_t initSensors(void){
+static bool_t imuInit(void){
 	bool_t sts = 0;
-
-	/* Disable these for discovery board,
-	 * don't think it will be problem on the quad tho */
-	//palSetPadMode(GPIOB, 6, PAL_MODE_ALTERNATE(0));
-	//palSetPadMode(GPIOB, 9, PAL_MODE_ALTERNATE(0));
 
 	i2cStart(&I2CD1, &i2cfg1);
 	palSetPadMode(GPIOB, 6, PAL_MODE_ALTERNATE(4) | PAL_STM32_OTYPE_OPENDRAIN);
@@ -250,20 +261,20 @@ static bool_t initSensors(void){
 		return FALSE;
 	}
 
-	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Reseting...\r\n");
+	//chprintf((BaseSequentialStream *)&SD1, "SENSOR: Reseting...\r\n");
 	MPUreset();
-	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Reseting Sensors...\r\n");
+	//chprintf((BaseSequentialStream *)&SD1, "SENSOR: Reseting Sensors...\r\n");
 	MPUresetSensors();
 	chThdSleepMilliseconds(100);
-	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Initializing...\r\n");
+	//chprintf((BaseSequentialStream *)&SD1, "SENSOR: Initializing...\r\n");
 	MPUinitialize();
 	chThdSleepMilliseconds(100);
 
 	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Calibrating...\r\n");
-	MPUgetMotion6(&XaccelRaw, &YaccelRaw, &ZaccelRaw, &XgyroRaw, &YgyroRaw, &ZgyroRaw);
+	MPUgetMotion6(&accelRaw.x, &accelRaw.y, &accelRaw.z, &gyroRaw.x, &gyroRaw.y, &gyroRaw.z);
 
-	XaccelAngle = (atan2(YaccelRaw,ZaccelRaw)+M_PI)*RAD_TO_DEG;
-	YaccelAngle = (atan2(XaccelRaw,ZaccelRaw)+M_PI)*RAD_TO_DEG;
+	XaccelAngle = (atan2(accelRaw.y,accelRaw.z))*RAD_TO_DEG;
+	YaccelAngle = (atan2(accelRaw.x,accelRaw.z))*RAD_TO_DEG;
 
 	XgyroRate = XaccelAngle;
 	YgyroRate = YaccelAngle;
@@ -271,7 +282,7 @@ static bool_t initSensors(void){
 	YcompAngle = YaccelAngle;
 
 	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Calibrating Complete...\r\n");
-	chprintf((BaseSequentialStream *)&SD1, "SENSOR: Creating Printer...\r\n");
+	//chprintf((BaseSequentialStream *)&SD1, "SENSOR: Creating Printer thread...\r\n");
 	chThdCreateStatic(waprint, sizeof(waprint), NORMALPRIO, thPrinter, NULL);
 
 	return TRUE;
@@ -281,11 +292,13 @@ static bool_t initSensors(void){
  * 	* Get the actual conversation speed
  * 	* Move the processing & filter to another function
  */
-static void getSensorData(void){
+static void imuGetData(void){
 
-	MPUgetMotion6(&XaccelRaw, &YaccelRaw, &ZaccelRaw, &XgyroRaw, &YgyroRaw, &ZgyroRaw);
-	/* Raw outputs */
-	//chprintf((BaseSequentialStream *)&SD1, "AXR: %d\t AYR:%d AZR: %d\t GXR:%d GYR: %d\t GZR:%d \r\n", XaccelRaw, YaccelRaw, ZaccelRaw, XgyroRaw, YgyroRaw, ZgyroRaw);
+	MPUgetMotion6(&accelRaw.x, &accelRaw.y, &accelRaw.z, &gyroRaw.x, &gyroRaw.y, &gyroRaw.z);
+
+	// #if defined(IMU_DEBUG)
+	// chprintf((BaseSequentialStream *)&SD1, "AXR: %d\t AYR:%d AZR: %d\t GXR:%d GYR: %d\t GZR:%d \r\n", accelRaw.x, accelRaw.y, accelRaw.z, gyroRaw.x, gyroRaw.y, gyroRaw.z);
+	// #endif
 
 	/*
 	 *  Get the atan of X and Y. This value will be between -¹ to ¹ in radians.
@@ -293,17 +306,19 @@ static void getSensorData(void){
 	 *  Here is the output for an (almost) flat reading:
 	 *  accXangle = 178.12345, accYangle = 179.12345
 	 */
-	XaccelAngle = (atan2(YaccelRaw,ZaccelRaw)+M_PI)*RAD_TO_DEG;
-	YaccelAngle = (atan2(XaccelRaw,ZaccelRaw)+M_PI)*RAD_TO_DEG;
+	XaccelAngle = (atan2(accelRaw.y,accelRaw.z))*RAD_TO_DEG;
+	YaccelAngle = (atan2(accelRaw.x,accelRaw.z))*RAD_TO_DEG;
 
-	applyCompFilter();
+	//XaccelAngle = (atan2(accelRaw.y,accelRaw.z)+M_PI)*RAD_TO_DEG;
+	//YaccelAngle = (atan2(accelRaw.x,accelRaw.z)+M_PI)*RAD_TO_DEG;
+
+	XgyroRate = (double)gyroRaw.x/131.0;
+	YgyroRate = -((double)gyroRaw.y/131.0);
+
+	imuApplyCompFilter();
 }
 
-static void applyCompFilter(void){
-
-	XgyroRate = (double)XgyroRaw/131.0;
-	YgyroRate = -((double)YgyroRaw/131.0);
-
+static void imuApplyCompFilter(void){
 	XcompAngle = (COMP*(XcompAngle+(XgyroRate*DT)))+((1-COMP)*XaccelAngle);
 	YcompAngle = (COMP*(YcompAngle+(YgyroRate*DT)))+((1-COMP)*YaccelAngle);
 }

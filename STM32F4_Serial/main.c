@@ -5,7 +5,7 @@
 
 #include "chprintf.h"
 
-#define USART_CR1_9BIT_WORD		(1 << 12)   /* CR1 9 bit word */
+#define USART_CR1_9BIT_WORD	(1 << 12)   /* CR1 9 bit word */
 #define USART_CR1_PARITY_SET	(1 << 10)	/* CR1 Parity bit enable */
 #define USART_CR1_EVEN_PARITY	(0 << 9)   /* CR1 even parity */
 
@@ -14,7 +14,6 @@ static void SendString(SerialDriver *sdp, const char *string); /* for example 3 
 static void print(char *p);
 static void println(char *p);
 static void printn(uint32_t n);
-
 
 static SerialConfig sd2cfg = {
    115200,									/* 115200 baud rate */

@@ -23,14 +23,14 @@ msg_t thReader(void *p) {
   EventListener s3EventListener;
   eventmask_t flag;
 
-  chEvtRegisterMask(chnGetEventSource(&SD3), &s3EventListener, ALLEVENTS);
+  chEvtRegisterMask(chnGetEventSource(&SD3), &s3EventListener, 1);
 
   while (TRUE) {
 	chEvtWaitOne(1);
 	chSysLock();
 	flag = chEvtGetAndClearFlagsI(&s3EventListener);
 	chSysUnlock();
-	//chprintf((BaseSequentialStream *)&SD3, "UART Event %d\r\n",(uint16_t)flag);
+	chprintf((BaseSequentialStream *)&SD3, "UART Event %d\r\n",(uint16_t)flag);
 
   }
 }

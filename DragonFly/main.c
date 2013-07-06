@@ -7,7 +7,7 @@
  */
 
 /*
- * DragonFly RevA (May 2013)
+ * DragonFly Quadcopter Board RevA (May 2013)
  * Configuration:
  *
  * Oscillator (HSE)    : 16MHz
@@ -62,13 +62,14 @@
 #define KD 0        // KD / DT = 0 / 0.002
 
 /* IMU variables */
-typedef struct {int16_t x; int16_t y; int16_t z;} axis;
+typedef struct {
+	int16_t x;
+	int16_t y;
+	int16_t z;
+} axis;
 
 axis accelRaw;
 axis gyroRaw;
-
-int16_t XaccelRaw, YaccelRaw, ZaccelRaw;
-int16_t XgyroRaw, YgyroRaw, ZgyroRaw;
 
 double XaccelAngle, YaccelAngle;
 double XgyroRate, YgyroRate;
@@ -77,6 +78,13 @@ double XcompAngle, YcompAngle;
 static bool_t isi2c;
 
 /* PID variables */
+typedef struct {
+	double kp;
+	double ki;
+	double kd;
+	double error;
+} PIDconfig;
+
 static double errorX, integralX, derivativeX, outputX;
 static double errorY, integralY, derivativeY, outputY;
 
@@ -84,7 +92,7 @@ static double errorY, integralY, derivativeY, outputY;
 static uint16_t mEastSpeed, mWestSpeed, mNorthSpeed, mSouthSpeed;
 
 /* XBee functions */
-static void initXBee(void);
+static void xbeeInit(void);
 
 /* Motor functions*/
 static void initMotors(void);
@@ -148,13 +156,13 @@ static const I2CConfig i2cfg1 = {
 
 /* Configure Heartbeat */
 static WORKING_AREA(wahbeat, 128);
-
 static msg_t thBlinker(void *arg){
 	(void)arg;
-	palSetPadMode(GPIOC, GPIOC_PIN4, PAL_MODE_OUTPUT_PUSHPULL);
-	palSetPadMode(GPIOC, GPIOC_PIN5, PAL_MODE_OUTPUT_PUSHPULL);
-	palClearPad(GPIOC, GPIOC_PIN5);
 	chRegSetThreadName("blinker");
+	palSetPadMode(GPIOC, GPIOC_PIN4, PAL_MODE_OUTPUT_PUSHPULL);	/* Green LED as output */
+	palSetPadMode(GPIOC, GPIOC_PIN5, PAL_MODE_OUTPUT_PUSHPULL); /* Blue LED as output */
+	palSetPad(GPIOC, GPIOC_PIN4);
+	palClearPad(GPIOC, GPIOC_PIN5);
 	while (TRUE){
 		palTogglePad(GPIOC, GPIOC_PIN4);
     	palTogglePad(GPIOC, GPIOC_PIN5);
@@ -165,7 +173,6 @@ static msg_t thBlinker(void *arg){
 
 /* Configure Printing */
 static WORKING_AREA(waprint, 128);
-
 static msg_t thPrinter(void *arg){
 	(void)arg;
 	chRegSetThreadName("printer");
@@ -181,18 +188,29 @@ static msg_t thPrinter(void *arg){
 
 int main(void) {
 
+	/*
+	 * Initialize ChibiOS/RT kernel and hal
+	 */
 	halInit();
 	chSysInit();
 
-	/* Create the heartbeat thread */
+	/*
+	 * Create the heartbeat thread
+	 */
 	chThdCreateStatic(wahbeat, sizeof(wahbeat), NORMALPRIO, thBlinker, NULL);
 
-	//initMotors();
-	initXBee();
+	/*
+	 * Initialize modules
+	 */
+	xbeeInit(); /* Initialize the radio link */
+	//initMotors(); /* Initialize the motor pins */
+	chThdSleepMilliseconds(3000); /* Wait 3 secs for radio link */
+	isi2c = imuInit();	/* Initialize the imu unit */
 
-	chThdSleepMilliseconds(3000);
-
-	isi2c = imuInit();
+	/*
+	 * TODO: initialize PIDs
+	 * TODO: Separate calibration for imu
+	 */
 
 	//mNorthSpeed = 300;
 	mNorthSpeed = 0;
@@ -230,7 +248,7 @@ static void initMotors(void){
 	pwmStart(&PWMD3, &mtrNCFG);
 }
 
-static void initXBee(void){
+static void xbeeInit(void){
 	palSetPadMode(GPIOA, 9, PAL_MODE_ALTERNATE(7));
 	palSetPadMode(GPIOA, 10, PAL_MODE_ALTERNATE(7));
 	sdStart(&SD1, &sd1cfg);

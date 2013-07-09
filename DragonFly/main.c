@@ -37,82 +37,37 @@
 #define USART_CR1_PARITY_SET  (1 << 10) /* CR1 Parity bit enable */
 #define USART_CR1_EVEN_PARITY (0 << 9)  /* CR1 even parity */
 
-//#define DEBUG_PRINT(x) chprintf((BaseChannel *)&SD1, x);
+#define DEBUG_PRINT(x) chprintf((BaseSequentialStream *)&SD1, x);
 //#define DEBUG_PRINTF(x, y) chprintf((BaseChannel *)&SD1, x, y);
 
 /*
- * PWM definitions for the motors. 500 might be increased to 512 to make it 2^9
+ * PWM definitions for the motors.
+ * TODO: 500 might be increased to 512 to make it 2^9
  */
 #define PWM_CLOCK_FREQUENCY 50000000
 #define PWM_PERIOD_IN_TICKS 500
 #define PWM_FREQUENCY (PWM_CLOCK_FREQUENCY/PWM_PERIOD_IN_TICKS)
 
+/*
+ * Motor definitions
+ */
 #define MOTOR_EAST  0
 #define MOTOR_WEST  1
 #define MOTOR_NORTH 2
 #define MOTOR_SOUTH 3
 
-#define RAD_TO_DEG 57.2957786
-
-#define DT   0.002
-#define COMP 0.99
-
-#define KP 1        // KP
-#define KI (1 * DT) // KI * DT = 1 * 0.002
-#define KD 0        // KD / DT = 0 / 0.002
-
-/* IMU variables */
-typedef struct {
-	int16_t x;
-	int16_t y;
-	int16_t z;
-} axis;
-
-axis accelRaw;
-axis gyroRaw;
-
-double XaccelAngle, YaccelAngle;
-double XgyroRate, YgyroRate;
-double XcompAngle, YcompAngle;
-
-static bool_t isi2c;
-
-/* PID variables */
-typedef struct {
-	double kp;
-	double ki;
-	double kd;
-	double error;
-} PIDconfig;
-
-static double errorX, integralX, derivativeX, outputX;
-static double errorY, integralY, derivativeY, outputY;
+#define NUM_MOTORS 4
+#define MAX_MOTOR_SPEED PWM_PERIOD_IN_TICKS
 
 /* Motor variables */
 static uint16_t mEastSpeed, mWestSpeed, mNorthSpeed, mSouthSpeed;
 
-/* XBee functions */
-static void xbeeInit(void);
-
-/* Motor functions*/
-static void initMotors(void);
-static void testMotors(void);
-static void setMotorSpeed(uint8_t motor_t, uint16_t speed_t);
-static void stableFlight(void);
-
-/* IMU functions */
-static bool_t imuInit(void);
-static void imuGetData(void);
-static void imuApplyCompFilter(void);
-static void imuApplyKalmanFilter(void);
-
-/* PID functions */
-static void initPID(void);
-static void updateP(void);
-static void updatePI(void);
-static void updatePID(void);
-
-/* Motor configurations */
+/* Motor Configuration:
+ * 	TIM3CH1 [PC6] (EAST)
+ * 	TIM3CH2 [PC7] (WEST)
+ * 	TIM2CH3 [PB10] (NORTH)
+ * 	TIM2CH4 [PB11] (SOUTH)
+ */
 static PWMConfig mtrPCFG = {
 	PWM_CLOCK_FREQUENCY,
 	PWM_PERIOD_IN_TICKS,
@@ -138,6 +93,93 @@ static PWMConfig mtrNCFG = {
 	},
 	0
 };
+
+/* Functions */
+
+/*
+ * Initializes motors
+ */
+static void motorsInit(void);
+
+/* Test each motor for 5 seconds
+ * Spins at 1/10 of the max speed
+ */
+static void motorsTest(void);
+
+/*
+ * Set motor speed.
+ * motor: [0..3] or MOTOR_EAST,
+ * 	MOTOR_WEST, MOTOR_NORTH, MOTOR_SOUTH
+ * mspeed: Between 0-500
+ *
+ * TODO:
+ * it may be more convenient to set
+ * it up to be between 0 - 100
+ */
+static void motorsSetSpeed(uint8_t motor, uint16_t mspeed);
+
+
+/*
+ * Radians to degree conversion
+ */
+#define RAD_TO_DEG 57.2957786
+
+#define DT   0.002
+#define COMP 0.99
+
+#define KP 1        // KP
+#define KI (1 * DT) // KI * DT = 1 * 0.002
+#define KD 0        // KD / DT = 0 / 0.002
+
+/* IMU variables */
+typedef struct {
+	int16_t x;
+	int16_t y;
+	int16_t z;
+} axis;
+
+axis ai16, gi16;
+
+double XaccelAngle, YaccelAngle;
+double XgyroRate, YgyroRate;
+double XcompAngle, YcompAngle;
+
+static bool_t isi2c;
+
+/* PID variables */
+typedef struct {
+	float kp;           // proportional gain
+	float ki;           // integral gain
+	float kd;           // derivative gain
+	float setpoint;     // set point
+	float error;        // error
+	float prevError;    // previous error
+	float integ;        // integral
+	float deriv;        // derivative
+} pid_t;
+
+static double errorX, integralX, derivativeX, outputX;
+static double errorY, integralY, derivativeY, outputY;
+
+/* Motor variables */
+static uint16_t mEastSpeed, mWestSpeed, mNorthSpeed, mSouthSpeed;
+
+/* XBee functions */
+static void xbeeInit(void);
+
+static void stableFlight(void);
+
+/* IMU functions */
+static bool_t imuInit(void);
+static void imuGetData(void);
+static void imuApplyCompFilter(void);
+static void imuApplyKalmanFilter(void);
+
+/* PID functions */
+static void initPID(void);
+static void updateP(void);
+static void updatePI(void);
+static void updatePID(void);
 
 /* XBee configuration */
 static SerialConfig sd1cfg = {
@@ -177,9 +219,8 @@ static msg_t thPrinter(void *arg){
 	(void)arg;
 	chRegSetThreadName("printer");
 	while (TRUE){
-		chprintf((BaseSequentialStream *)&SD1, "%f:%f\n", XcompAngle,YcompAngle);
-		//chprintf((BaseSequentialStream *)&SD1, "%f:%f\n", XaccelAngle,XcompAngle);
-		//chprintf((BaseSequentialStream *)&SD1, "AX: %6d AY: %6d AZ: %6d ,GX: %6d GY: %6d GZ: %6d\t\r\n", accelRaw.x, accelRaw.y, accelRaw.z, gyroRaw.x, gyroRaw.y, gyroRaw.z);
+		chprintf((BaseSequentialStream *)&SD1, "%f,%f,%f,%f\n", XaccelAngle,YaccelAngle,XcompAngle,YcompAngle);
+		//chprintf((BaseSequentialStream *)&SD1, "AX: %6d AY: %6d AZ: %6d ,GX: %6d GY: %6d GZ: %6d\t\r\n", ai16.x, ai16.y, ai16.z, gi16.x, gi16.y, gi16.z);
 		//chprintf((BaseSequentialStream *)&SD1, "EX: %f\t EY: %f\t OY: %f\t OY: %f\r\n",XcompAngle,errorY,outputX,outputY);
 		chThdSleepMilliseconds(50);
 	}
@@ -203,7 +244,7 @@ int main(void) {
 	 * Initialize modules
 	 */
 	xbeeInit(); /* Initialize the radio link */
-	//initMotors(); /* Initialize the motor pins */
+	//motorsInit(); /* Initialize the motor pins */
 	chThdSleepMilliseconds(3000); /* Wait 3 secs for radio link */
 	isi2c = imuInit();	/* Initialize the imu unit */
 
@@ -237,17 +278,6 @@ int main(void) {
 	}
 }
 
-static void initMotors(void){
-
-	palSetPadMode(GPIOC, GPIOC_PIN6, PAL_MODE_ALTERNATE(2)); /* M1 */
-	palSetPadMode(GPIOB, GPIOB_PIN10, PAL_MODE_ALTERNATE(1)); /* M2 */
-	palSetPadMode(GPIOC, GPIOC_PIN7, PAL_MODE_ALTERNATE(2)); /* M3 */
-	palSetPadMode(GPIOB, GPIOB_PIN11, PAL_MODE_ALTERNATE(1)); /* M4 */
-
-	pwmStart(&PWMD2, &mtrPCFG);
-	pwmStart(&PWMD3, &mtrNCFG);
-}
-
 static void xbeeInit(void){
 	palSetPadMode(GPIOA, 9, PAL_MODE_ALTERNATE(7));
 	palSetPadMode(GPIOA, 10, PAL_MODE_ALTERNATE(7));
@@ -255,8 +285,6 @@ static void xbeeInit(void){
 }
 
 static bool_t imuInit(void){
-	bool_t sts = 0;
-
 	i2cStart(&I2CD1, &i2cfg1);
 	palSetPadMode(GPIOB, 6, PAL_MODE_ALTERNATE(4) | PAL_STM32_OTYPE_OPENDRAIN);
 	palSetPadMode(GPIOB, 7, PAL_MODE_ALTERNATE(4) | PAL_STM32_OTYPE_OPENDRAIN);
@@ -265,50 +293,49 @@ static bool_t imuInit(void){
 
 	/* MPU6050, AD0 is connected to VCC */
 	MPU6050(MPU6050_ADDRESS_AD0_HIGH);
+	//MPU6050(MPU6050_ADDRESS_AD0_LOW);
 
 	/* Test connection */
-	sts = MPUtestConnection();
-	if (sts) chprintf((BaseSequentialStream *)&SD1, "SENSOR: Testing Connection Success!\r\n");
-	else {
-		chprintf((BaseSequentialStream *)&SD1, "SENSOR: ERROR: MPU6050 is not found!\r\n");
-		return FALSE;
-	}
-	#if defined(IMU_DEBUG)
-		chprintf((BaseSequentialStream *)&SD1, "SENSOR: Reseting...\r\n");
+	MPUtestConnection()? chprintf((BaseSequentialStream *)&SD1, "IMU: MPU6050 [PASSED]\r\n"):
+			chprintf((BaseSequentialStream *)&SD1, "IMU: MPU6050 [ERROR]\r\n");
+
+	#ifdef IMU_DEBUG
+		DEBUG_PRINT("IMU: Reseting...\r\n");
 	#endif
 
 	MPUreset();
 
-	#if defined(IMU_DEBUG)
-		chprintf((BaseSequentialStream *)&SD1, "SENSOR: Reseting Sensors...\r\n");
+	#ifdef IMU_DEBUG
+		chprintf((BaseSequentialStream *)&SD1, "IMU: Reseting Sensors...\r\n");
 	#endif
 
 	MPUresetSensors();
 	chThdSleepMilliseconds(100);
 
-	#if defined(IMU_DEBUG)
-		chprintf((BaseSequentialStream *)&SD1, "SENSOR: Initializing...\r\n");
+	#ifdef IMU_DEBUG
+		chprintf((BaseSequentialStream *)&SD1, "IMU: Initializing...\r\n");
 	#endif
+
 	MPUinitialize();
 	chThdSleepMilliseconds(100);
 
-	#if defined(IMU_DEBUG)
-		chprintf((BaseSequentialStream *)&SD1, "SENSOR: Calibrating...\r\n");
+	#ifdef IMU_DEBUG
+		chprintf((BaseSequentialStream *)&SD1, "IMU: Calibrating...\r\n");
 	#endif
 
-	MPUgetMotion6(&accelRaw.x, &accelRaw.y, &accelRaw.z, &gyroRaw.x, &gyroRaw.y, &gyroRaw.z);
+	MPUgetMotion6(&ai16.x, &ai16.y, &ai16.z, &gi16.x, &gi16.y, &gi16.z);
 
-	XaccelAngle = (atan2(accelRaw.y,accelRaw.z))*RAD_TO_DEG;
-	YaccelAngle = (atan2(accelRaw.x,accelRaw.z))*RAD_TO_DEG;
+	XaccelAngle = (atan2(ai16.y,ai16.z))*RAD_TO_DEG;
+	YaccelAngle = (atan2(ai16.x,ai16.z))*RAD_TO_DEG;
 
 	XgyroRate = XaccelAngle;
 	YgyroRate = YaccelAngle;
 	XcompAngle = XaccelAngle;
 	YcompAngle = YaccelAngle;
 
-	#if defined(IMU_DEBUG)
-		chprintf((BaseSequentialStream *)&SD1, "SENSOR: Calibrating Complete...\r\n");
-		chprintf((BaseSequentialStream *)&SD1, "SENSOR: Creating Printer thread...\r\n");
+	#ifdef IMU_DEBUG
+		chprintf((BaseSequentialStream *)&SD1, "IMU: Calibrating Complete...\r\n");
+		chprintf((BaseSequentialStream *)&SD1, "IMU: Creating Printer thread...\r\n");
 		chThdCreateStatic(waprint, sizeof(waprint), NORMALPRIO, thPrinter, NULL);
 	#endif
 	return TRUE;
@@ -316,18 +343,18 @@ static bool_t imuInit(void){
 
 static void imuGetData(void){
 
-	MPUgetMotion6(&accelRaw.x, &accelRaw.y, &accelRaw.z, &gyroRaw.x, &gyroRaw.y, &gyroRaw.z);
+	MPUgetMotion6(&ai16.x, &ai16.y, &ai16.z, &gi16.x, &gi16.y, &gi16.z);
 
 	/*
 	 *  Get the atan of X and Y. This value will be between -¹ to ¹ in radians.
 	 *  Optionally ¹ can be added to make it between 0 to 2¹. (M_PI).
 	 *  Finally convert it to degrees.
 	 */
-	XaccelAngle = (atan2(accelRaw.y,accelRaw.z))*RAD_TO_DEG;
-	YaccelAngle = (atan2(accelRaw.x,accelRaw.z))*RAD_TO_DEG;
+	XaccelAngle = (atan2(ai16.y,ai16.z))*RAD_TO_DEG;
+	YaccelAngle = (atan2(ai16.x,ai16.z))*RAD_TO_DEG;
 
-	XgyroRate = (double)gyroRaw.x/131.0;
-	YgyroRate = -((double)gyroRaw.y/131.0);
+	XgyroRate = (double)gi16.x/131.0;
+	YgyroRate = -((double)gi16.y/131.0);
 
 	imuApplyCompFilter();
 }
@@ -335,30 +362,6 @@ static void imuGetData(void){
 static void imuApplyCompFilter(void){
 	XcompAngle = (COMP*(XcompAngle+(XgyroRate*DT)))+((1-COMP)*XaccelAngle);
 	YcompAngle = (COMP*(YcompAngle+(YgyroRate*DT)))+((1-COMP)*YaccelAngle);
-}
-
-/* TODO:
- * 	* Change the (PWM_PER...) variable to something like
- * MAX_MOTOR_SPEED.
- */
-static void setMotorSpeed(uint8_t motor_t, uint16_t speed_t){
-
-	if (speed_t > PWM_PERIOD_IN_TICKS) speed_t = PWM_PERIOD_IN_TICKS;
-
-	switch (motor_t) {
-	case MOTOR_EAST:
-		pwmEnableChannel(&PWMD3, 0, speed_t);
-		break;
-	case MOTOR_WEST:
-		pwmEnableChannel(&PWMD3, 1, speed_t);
-		break;
-	case MOTOR_NORTH:
-		pwmEnableChannel(&PWMD2, 2, speed_t);
-		break;
-	case MOTOR_SOUTH:
-		pwmEnableChannel(&PWMD2, 3, speed_t);
-		break;
-	}
 }
 
 /*
@@ -404,21 +407,45 @@ static void updatePI(void){
     else if (outputY < -180) outputY = -180;
 }
 
-static void testMotors(void){
+static void motorsInit(void){
 
-	chprintf((BaseSequentialStream *)&SD1, "Testing Motors...");
-	setMotorSpeed(MOTOR_EAST, PWM_PERIOD_IN_TICKS/10);
-	chThdSleepMilliseconds(5000);
-	setMotorSpeed(MOTOR_EAST, 0);
-	setMotorSpeed(MOTOR_WEST, PWM_PERIOD_IN_TICKS/10);
-	chThdSleepMilliseconds(5000);
-	setMotorSpeed(MOTOR_WEST, 0);
-	setMotorSpeed(MOTOR_NORTH, PWM_PERIOD_IN_TICKS/10);
-	chThdSleepMilliseconds(5000);
-	setMotorSpeed(MOTOR_NORTH, 0);
-	setMotorSpeed(MOTOR_SOUTH, PWM_PERIOD_IN_TICKS/10);
-	chThdSleepMilliseconds(5000);
-	setMotorSpeed(MOTOR_SOUTH, 0);
+	palSetPadMode(GPIOC, GPIOC_PIN6, PAL_MODE_ALTERNATE(2)); /* MEAST - TIM3 */
+	palSetPadMode(GPIOC, GPIOC_PIN7, PAL_MODE_ALTERNATE(2)); /* MWEST - TIM3 */
+	palSetPadMode(GPIOB, GPIOB_PIN10, PAL_MODE_ALTERNATE(1)); /* MNORTH - TIM2 */
+	palSetPadMode(GPIOB, GPIOB_PIN11, PAL_MODE_ALTERNATE(1)); /* MSOUTH - TIM2 */
+
+	pwmStart(&PWMD2, &mtrPCFG); /* TIM2 Init */
+	pwmStart(&PWMD3, &mtrNCFG); /* TIM3 Init */
+}
+
+static void motorsSetSpeed(uint8_t motor, uint16_t mspeed){
+
+	if (mspeed > MAX_MOTOR_SPEED) mspeed = MAX_MOTOR_SPEED;
+
+	switch (motor) {
+	case MOTOR_EAST:
+		pwmEnableChannel(&PWMD3, 0, mspeed);
+		break;
+	case MOTOR_WEST:
+		pwmEnableChannel(&PWMD3, 1, mspeed);
+		break;
+	case MOTOR_NORTH:
+		pwmEnableChannel(&PWMD2, 2, mspeed);
+		break;
+	case MOTOR_SOUTH:
+		pwmEnableChannel(&PWMD2, 3, mspeed);
+		break;
+	default:
+		break;
+	}
+}
+
+static void motorsTest(void){
+	uint8_t i;
+	for (i = 0; i<4; i++)
+		motorsSetSpeed(i, MAX_MOTOR_SPEED/10);
+		chThdSleepMilliseconds(5000);
+		motorsSetSpeed(i, 0);
 }
 
 static void stableFlight(void){
@@ -426,10 +453,10 @@ static void stableFlight(void){
 	//mWestSpeed = mWestSpeed - (int16_t)(outputY);
 	//mNorthSpeed = mNorthSpeed + outputX;
 
-	setMotorSpeed(MOTOR_EAST, mEastSpeed);
-	setMotorSpeed(MOTOR_WEST, mWestSpeed);
-	setMotorSpeed(MOTOR_NORTH, mNorthSpeed);
-	setMotorSpeed(MOTOR_SOUTH, mSouthSpeed);
+	motorsSetSpeed(MOTOR_EAST, mEastSpeed);
+	motorsSetSpeed(MOTOR_WEST, mWestSpeed);
+	motorsSetSpeed(MOTOR_NORTH, mNorthSpeed);
+	motorsSetSpeed(MOTOR_SOUTH, mSouthSpeed);
 }
 
 

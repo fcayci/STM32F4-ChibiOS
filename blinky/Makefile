@@ -61,7 +61,7 @@ endif
 #
 
 # Define project name here
-PROJECT = blinky
+PROJECT = ch
 
 # Imported source files and paths
 include $(CHIBIOS)/boards/ST_STM32F4_DISCOVERY/board.mk

@@ -7,7 +7,7 @@
 static WORKING_AREA(wablink, 32);
 static msg_t thBlinker(void *arg){
 	(void)arg;
-	//palSetPadMode(GPIOD, GPIOD_LED4, PAL_MODE_OUTPUT_PUSHPULL);  /* Green */
+	palSetPadMode(GPIOD, GPIOD_LED4, PAL_MODE_OUTPUT_PUSHPULL);  /* Green */
 	chRegSetThreadName("blinker");
 	while (TRUE){
 		palTogglePad(GPIOD, GPIOD_LED4); /* Green */

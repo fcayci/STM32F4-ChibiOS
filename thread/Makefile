@@ -61,7 +61,7 @@ endif
 #
 
 # Define project name here
-PROJECT = thread
+PROJECT = ch
 
 # Imported source files and paths
 

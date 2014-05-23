@@ -1,4 +1,6 @@
-/* Basic thread example */
+/*
+ * A Simple static thread example for STM32F4 Discovery Board
+ */
 
 #include "ch.h"
 #include "hal.h"
@@ -30,4 +32,6 @@ int main(void) {
     	palTogglePad(GPIOD, GPIOD_LED3); /* Orange */
     	chThdSleepMilliseconds(1000);
 	}
+
+	return 0;
 }

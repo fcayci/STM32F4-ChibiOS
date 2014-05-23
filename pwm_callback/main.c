@@ -1,29 +1,32 @@
-/* Basic PWM example for fading LEDs with callback */
+/*
+ * A Simple PWM example for fading LEDs with callback
+ */
 
 #include "ch.h"
 #include "hal.h"
 
-static void LEDControl(PWMDriver *pwmp);
+static void pwmcb(PWMDriver *pwmp);
 
 /* Only Channel 1 active */
 static PWMConfig pwmCFG = {
   1000000,								/* 1MHz PWM clock frequency  */
   10000,								/* PWM period (in ticks) 10mS (1/1MHz=1uS, 1us*10000 ticks=10mS) */
-  LEDControl,							/* Callback */
+  pwmcb,								/* Callback */
   {
     {PWM_OUTPUT_ACTIVE_HIGH, NULL},		/* Enable Channel 0 */
     {PWM_OUTPUT_ACTIVE_HIGH, NULL},		/* Enable Channel 1 */
     {PWM_OUTPUT_ACTIVE_HIGH, NULL},		/* Enable Channel 2 */
     {PWM_OUTPUT_ACTIVE_HIGH, NULL}		/* Enable Channel 3 */
   },
-  0  									/* HW dependent part */
+  0,  									/* HW dependent part */
+  0
 };
 
 /*
- * PWM cyclic callback.
+ * PWM callback.
  * Each time calculate the next duty cycle.
  */
-static void LEDControl(PWMDriver *pwmp) {
+static void pwmcb(PWMDriver *pwmp) {
 	(void)pwmp;
 
 	static uint16_t dir = 0, width = 0;

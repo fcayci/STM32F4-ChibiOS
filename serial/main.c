@@ -1,13 +1,16 @@
-/* Basic USART example for printing */
+/*
+ * A Simple USART example for printing on the serial port
+ * Connect RX/TX to C10/C11
+ */
 
 #include "ch.h"
 #include "hal.h"
 
 #include "chprintf.h"
 
-#define USART_CR1_9BIT_WORD	(1 << 12)   /* CR1 9 bit word */
-#define USART_CR1_PARITY_SET	(1 << 10)	/* CR1 Parity bit enable */
-#define USART_CR1_EVEN_PARITY	(0 << 9)   /* CR1 even parity */
+#define USART_CR1_9BIT_WORD		(1 << 12) /* CR1 9 bit word */
+#define USART_CR1_PARITY_SET 	(1 << 10) /* CR1 Parity bit enable */
+#define USART_CR1_EVEN_PARITY	(0 << 9)  /* CR1 even parity */
 
 #define PrintS2(x)    SendString(&SD3, x);	/* for example 4 */
 static void SendString(SerialDriver *sdp, const char *string); /* for example 3 */
@@ -39,8 +42,8 @@ int main(void) {
 	palSetPadMode(GPIOC, 11, PAL_MODE_ALTERNATE(7));
 
 	while (TRUE){
-		static uint8_t temp;
-		temp = 7;
+		static uint8_t temp = 7;
+
 	    if (palReadPad(GPIOA, GPIOA_BUTTON))
 	    	sdWrite(&SD3, (uint8_t *)"Button Pressed!\r\n", 17);
 	    sdWrite(&SD3, (uint8_t *)"Example: 1\r\n", 12);

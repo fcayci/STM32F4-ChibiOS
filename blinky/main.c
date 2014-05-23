@@ -1,5 +1,5 @@
 /*
- * Blink LED
+ * A Simple LED blinking example for STM32F4 Discovery board
  */
 
 #include "ch.h"
@@ -7,24 +7,15 @@
 
 int main(void) {
 
-	/*
-	 * ChibiOS/RT stuff
-	 */
 	halInit();
 	chSysInit();
 
-	/*
-	 * Set PD13 as output pin
-	 */
-	palSetPadMode(GPIOD, GPIOD_LED3, PAL_MODE_OUTPUT_PUSHPULL);  /* Orange */
+	palSetPadMode(GPIOD, GPIOD_LED3, PAL_MODE_OUTPUT_PUSHPULL);
 
-	/* Infinite Loop */
 	while (TRUE) {
-
-		/* Toggle the output */
-    	palTogglePad(GPIOD, GPIOD_LED3); /* Orange */
-
-    	/* Sleep for 500 milliseconds */
+    	palTogglePad(GPIOD, GPIOD_LED3);
     	chThdSleepMilliseconds(500);
 	}
+
+	return 0;
 }

@@ -1,4 +1,7 @@
-/* Basic USART example for printing */
+/* 
+ * Basic USART example for printing 
+ * Needs testing
+ */
 
 #include "ch.h"
 #include "hal.h"

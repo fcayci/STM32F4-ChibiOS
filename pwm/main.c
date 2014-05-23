@@ -1,4 +1,6 @@
-/* Basic PWM example for blinking an LED */
+/*
+ * A Simple PWM Example for blinking LED.
+ */
 
 #include "ch.h"
 #include "hal.h"
@@ -14,7 +16,8 @@ static PWMConfig pwmCFG = {
     {PWM_OUTPUT_DISABLED, NULL},
     {PWM_OUTPUT_DISABLED, NULL}
   },
-  0  									/* HW dependent part.*/
+  0,  									/* HW dependent part.*/
+  0
 };
 
 int main(void) {
@@ -35,5 +38,5 @@ int main(void) {
 	while (TRUE) {
     	chThdSleepMilliseconds(1000);
 	}
+	return 0;
 }
-

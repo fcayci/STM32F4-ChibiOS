@@ -2,6 +2,7 @@
 * MPU6050 Breakout board attached to STM32F4 Discovery board
 * MPU6050 SDA,SCL: PB6,PB7
 * UART TX,RX: PA2,PA3
+* Needs testing
 */
 
 

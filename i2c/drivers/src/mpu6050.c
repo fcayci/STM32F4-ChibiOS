@@ -41,7 +41,7 @@ THE SOFTWARE.
 
 #include "ch.h"
 #include "hal.h"
-#include "MPU6050.h"
+#include "mpu6050.h"
 #include "i2cdev_chibi.h"
 #include "chprintf.h"
 

@@ -24,9 +24,9 @@ ChibiOS/RT examples running on STM32F4 Discovery board
 
 #### TODO
 
-[ ] I2C code test
-[ ] UART example test
-[ ] Serial read example
-[ ] Shell over serial line example
-[ ] ADC example
-[ ] DAC example
+* I2C code test
+* UART example test
+* Serial read example
+* Shell over serial line example
+* ADC example
+* DAC example

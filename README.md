@@ -4,9 +4,9 @@ ChibiOS/RT examples running on STM32F4 Discovery board
 
 ### Required tools
 
-* `GNU ARM Toolchain` from [https://launchpad.net/gcc-arm-embedded]()
-* `ChibiOS/RT` from [https://github.com/mabl/ChibiOS]()
-* `ST-LINK` from [https://github.com/texane/stlink]()
+* [GNU ARM Toolchain](https://launchpad.net/gcc-arm-embedded) - Cross Compiler
+* [ChibiOS/RT](https://github.com/mabl/ChibiOS) - Real Time Operating System
+* [ST-LINK](https://github.com/texane/stlink) - Programmer
 
 #### Notes
 
@@ -25,8 +25,6 @@ ChibiOS/RT examples running on STM32F4 Discovery board
 #### TODO
 
 * I2C code test
-* UART example test
-* Serial read example
 * Shell over serial line example
 * ADC example
 * DAC example

@@ -1,5 +1,5 @@
 /*
- * A Simple LED blinking example for STM32F4 Discovery board
+ * A Simple LED blinking example
  */
 
 #include "ch.h"
@@ -7,15 +7,15 @@
 
 int main(void) {
 
-	halInit();
-	chSysInit();
+    halInit();
+    chSysInit();
 
-	palSetPadMode(GPIOD, GPIOD_LED3, PAL_MODE_OUTPUT_PUSHPULL);
+    palSetPadMode(GPIOD, GPIOD_LED3, PAL_MODE_OUTPUT_PUSHPULL);
 
-	while (TRUE) {
-    	palTogglePad(GPIOD, GPIOD_LED3);
-    	chThdSleepMilliseconds(500);
-	}
+    while (TRUE) {
+        palTogglePad(GPIOD, GPIOD_LED3);
+        chThdSleepMilliseconds(500);
+    }
 
-	return 0;
+    return 0;
 }

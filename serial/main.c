@@ -35,7 +35,7 @@ int main(void) {
     /*
     * Activates the serial driver 3 using the driver sd3cfg configuration.
     * PC10(TX) and PC11(RX) are routed to USART3.
-    * PAL_MODE_ALTERNATE is the value that you pass from Table 8. Alternate function mapping
+    * PAL_MODE_ALTERNATE is the value that you pass from Table 9. Alternate function mapping
     * in DM00037051 - STM32F405xx/STM32F407xx Datasheet
     */
     sdStart(&SD3, &sd3cfg);

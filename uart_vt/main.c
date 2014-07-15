@@ -123,7 +123,7 @@ int main(void) {
     chSysInit();
 
     /*
-    * PAL_MODE_ALTERNATE is the value that you pass from Table 8. Alternate function mapping
+    * PAL_MODE_ALTERNATE is the value that you pass from Table 9. Alternate function mapping
     * in DM00037051 - STM32F405xx/STM32F407xx Datasheet
     */
     uartStart(&UARTD3, &uartcfg);

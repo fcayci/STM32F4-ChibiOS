@@ -7,7 +7,6 @@
 
 static void pwmcb(PWMDriver *pwmp);
 
-/* Only Channel 1 active */
 static PWMConfig pwmCFG = {
     1000000,                            /* 1MHz PWM clock frequency  */
     10000,                              /* PWM period (in ticks) 10mS (1/1MHz=1uS, 1us*10000 ticks=10mS) */
